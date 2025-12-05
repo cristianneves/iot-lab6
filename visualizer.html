@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard IoT - Atividade #1</title>
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonte Inter para visual moderno -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Animação do Log */
+        .log-entry {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Estilos do Gauge (Medidor) */
+        .gauge-bg {
+            fill: none;
+            stroke: #e2e8f0;
+            stroke-width: 10;
+            stroke-linecap: round;
+        }
+        .gauge-fill {
+            fill: none;
+            stroke: #3b82f6; /* Azul padrão */
+            stroke-width: 10;
+            stroke-linecap: round;
+            stroke-dasharray: 126; /* Circunferência aproximada para meio círculo */
+            stroke-dashoffset: 126; /* Começa vazio */
+            transition: stroke-dashoffset 1s ease-out, stroke 0.5s;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-6 flex flex-col items-center">
+
+    <!-- Cabeçalho -->
+    <header class="w-full max-w-4xl flex justify-between items-center mb-8 border-b border-slate-700 pb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-blue-400">IoT Dashboard</h1>
+            <p class="text-sm text-slate-400">Atividade #1 - Consumo e Visualização</p>
+        </div>
+        <div id="connection-status" class="px-3 py-1 rounded-full text-xs font-semibold bg-red-500/20 text-red-400 border border-red-500/50">
+            Desconectado
+        </div>
+    </header>
+
+    <!-- Área Principal de Visualização -->
+    <main class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        
+        <!-- Cartão de Temperatura (Gauge) -->
+        <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg flex flex-col items-center justify-center relative">
+            <h2 class="text-lg font-semibold text-slate-300 mb-2">Temperatura</h2>
+            
+            <div class="relative w-48 h-24 mt-4 overflow-hidden">
+                <!-- SVG Gauge -->
+                <svg viewBox="0 0 100 50" class="w-full h-full">
+                    <path d="M 10 50 A 40 40 0 0 1 90 50" class="gauge-bg" />
+                    <path id="temp-gauge-path" d="M 10 50 A 40 40 0 0 1 90 50" class="gauge-fill" />
+                </svg>
+                <!-- Valor Central -->
+                <div class="absolute bottom-0 left-0 w-full text-center">
+                    <span id="temp-value" class="text-4xl font-bold text-white">--</span>
+                    <span class="text-xl text-slate-400">°C</span>
+                </div>
+            </div>
+            <p class="text-xs text-slate-500 mt-2">Range: 0°C - 50°C</p>
+        </div>
+
+        <!-- Cartão de Umidade e Detalhes -->
+        <div class="flex flex-col gap-6">
+            <!-- Umidade -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-300">Umidade</h2>
+                    <p class="text-xs text-slate-500">Umidade Relativa do Ar</p>
+                </div>
+                <div class="flex items-end">
+                    <span id="humidity-value" class="text-4xl font-bold text-blue-400">--</span>
+                    <span class="text-xl text-blue-400 ml-1">%</span>
+                </div>
+            </div>
+
+            <!-- Timestamp e Info -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg">
+                <h2 class="text-lg font-semibold text-slate-300 mb-2">Dados do Sensor</h2>
+                <div class="space-y-2">
+                    <div class="flex justify-between border-b border-slate-700 pb-2">
+                        <span class="text-slate-400">ID do Sensor:</span>
+                        <span id="sensor-id" class="font-mono text-white">--</span>
+                    </div>
+                    <div class="flex justify-between pt-1">
+                        <span class="text-slate-400">Timestamp:</span>
+                        <span id="timestamp-val" class="font-mono text-xs text-yellow-400 mt-1">Aguardando dados...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Terminal de Logs (Console Output) -->
+    <section class="w-full max-w-4xl flex-grow flex flex-col">
+        <div class="flex justify-between items-center mb-2">
+            <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">Log de Transmissão (POST /visualize)</h3>
+            <span class="text-xs text-slate-600">Atualiza a cada 5s</span>
+        </div>
+        <div id="log-container" class="bg-black rounded-lg p-4 font-mono text-xs text-green-400 h-48 overflow-y-auto border border-slate-700 shadow-inner">
+            <p class="text-slate-500 italic">> Inicializando sistema de monitoramento...</p>
+        </div>
+    </section>
+
+    <script>
+        // --- Configurações ---
+        const API_BASE_URL = 'http://127.0.0.1:5000';
+        const UPDATE_INTERVAL = 5000; // 5 segundos
+
+        // --- Referências do DOM ---
+        const els = {
+            tempValue: document.getElementById('temp-value'),
+            gaugePath: document.getElementById('temp-gauge-path'),
+            humidityValue: document.getElementById('humidity-value'),
+            timestampVal: document.getElementById('timestamp-val'),
+            sensorId: document.getElementById('sensor-id'),
+            logContainer: document.getElementById('log-container'),
+            status: document.getElementById('connection-status')
+        };
+
+        // --- Funções Auxiliares ---
+
+        // Função para atualizar o Log na tela
+        function addLog(message, type = 'success') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry mb-1 ${type === 'error' ? 'text-red-400' : 'text-green-400'}`;
+            const time = new Date().toLocaleTimeString();
+            entry.innerText = `[${time}] ${message}`;
+            
+            els.logContainer.prepend(entry); // Adiciona no topo
+            
+            // Limpa logs antigos se tiver muitos
+            if (els.logContainer.children.length > 50) {
+                els.logContainer.lastChild.remove();
+            }
+        }
+
+        // Atualiza status de conexão (UI)
+        function setStatus(online) {
+            if (online) {
+                els.status.className = "px-3 py-1 rounded-full text-xs font-semibold bg-green-500/20 text-green-400 border border-green-500/50";
+                els.status.innerText = "Conectado";
+            } else {
+                els.status.className = "px-3 py-1 rounded-full text-xs font-semibold bg-red-500/20 text-red-400 border border-red-500/50";
+                els.status.innerText = "Erro / Offline";
+            }
+        }
+
+        // Atualiza o Gauge de Temperatura (SVG)
+        function updateGauge(temp) {
+            // Assume range de 0 a 50 graus
+            const minTemp = 0;
+            const maxTemp = 50;
+            
+            // Clampar valor
+            let displayTemp = Math.max(minTemp, Math.min(temp, maxTemp));
+            
+            // Calcular porcentagem (0 a 1)
+            const percentage = (displayTemp - minTemp) / (maxTemp - minTemp);
+            
+            // O path total é ~126 (calculado empiricamente para o arco SVG)
+            const maxDash = 126;
+            const newOffset = maxDash - (percentage * maxDash);
+
+            els.gaugePath.style.strokeDashoffset = newOffset;
+
+            // Muda cor baseado na temperatura
+            if (displayTemp > 35) els.gaugePath.style.stroke = "#ef4444"; // Vermelho
+            else if (displayTemp > 25) els.gaugePath.style.stroke = "#eab308"; // Amarelo
+            else els.gaugePath.style.stroke = "#3b82f6"; // Azul
+        }
+
+        // --- Lógica Principal ---
+
+        async function cycleData() {
+            try {
+                // 1. BUSCAR DADOS (GET)
+                addLog("Buscando dados em /data...", "info");
+                const response = await fetch(`${API_BASE_URL}/data`);
+                
+                if (!response.ok) throw new Error(`Erro API: ${response.status}`);
+                
+                const dataList = await response.json();
+
+                // Verifica se veio lista e pega o último item (mais recente)
+                // A API retorna os 2 últimos, então pegamos o índice [1] ou o último disponível
+                const latestData = Array.isArray(dataList) && dataList.length > 0 
+                    ? dataList[dataList.length - 1] 
+                    : null;
+
+                if (!latestData) throw new Error("Nenhum dado retornado.");
+
+                // 2. ATUALIZAR INTERFACE
+                const { temp, umid, timestamp, id } = latestData; // Ajuste as chaves conforme o JSON da sua API externa
+
+                // Preencher valores (assumindo chaves padrão, ajustar se necessário)
+                // Se a API externa usa nomes diferentes (ex: 'temperature', 'humidity'), altere aqui.
+                // Vou usar um fallback seguro.
+                const tempVal = temp !== undefined ? temp : (latestData.temperature || 0);
+                const umidVal = umid !== undefined ? umid : (latestData.humidity || 0);
+                const timeVal = timestamp || new Date().toISOString();
+                const idVal = id || "Desconhecido";
+
+                els.tempValue.innerText = tempVal;
+                els.humidityValue.innerText = umidVal;
+                els.timestampVal.innerText = timeVal;
+                els.sensorId.innerText = idVal;
+
+                updateGauge(tempVal);
+                setStatus(true);
+
+                // 3. ENVIAR DADOS (POST) - Requisito da Atividade
+                // Enviamos o dado recebido para o endpoint de visualização
+                await sendVisualizationData(latestData);
+
+            } catch (error) {
+                console.error(error);
+                setStatus(false);
+                addLog(`Falha no ciclo: ${error.message}`, "error");
+            }
+        }
+
+        async function sendVisualizationData(payload) {
+            try {
+                const res = await fetch(`${API_BASE_URL}/visualize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    addLog(`POST /visualize Sucesso! Dados enviados.`);
+                } else {
+                    addLog(`Erro POST /visualize: ${res.status}`, "error");
+                }
+            } catch (err) {
+                addLog(`Erro Conexão POST: ${err.message}`, "error");
+            }
+        }
+
+        // Iniciar Ciclo
+        setInterval(cycleData, UPDATE_INTERVAL);
+        
+        // Rodar imediatamente ao carregar
+        cycleData();
+
+    </script>
+</body>
+</html>
